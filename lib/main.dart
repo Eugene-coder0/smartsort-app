@@ -6,6 +6,7 @@ import 'package:solana/solana.dart';
 import 'package:solana/dto.dart';
 import 'package:http/http.dart' ;
 import 'package:http/http.dart' as http;
+import 'package:speech_to_text/speech_to_text.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +58,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // --- ALERTA INTEGRATION MONITORING STATE FLAG ---
   bool isMaintenanceMode = false;
   bool _wasPreviouslyFull = false;
+  // Add these variables at the top of your state class
+final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
+bool _isListening = false;
+String _speechText = "Press the mic and say a command...";
+final SpeechToText _speech = SpeechToText();
+
+// This function sends manual motor command strings straight to Firebase
+void _sendMotorCommand(String direction) {
+  _dbRef.child('motor_control').set({
+    'command': direction,
+    'timestamp': ServerValue.timestamp,
+    'triggered_by': 'app_manual'
+  });
+}
+
+// This function handles initializing and listening to your voice
+void _listenToVoice() async {
+  if (!_isListening) {
+    bool available = await _speech.initialize(
+      onStatus: (val) => print('Speech Status: $val'),
+      onError: (val) => print('Speech Error: $val'),
+    );
+    if (available) {
+      setState(() => _isListening = true);
+      _speech.listen(
+        onResult: (val) {
+          setState(() {
+            _speechText = val.recognizedWords;
+            // Voice command checking logic
+           _speech.listen(
+  onResult: (val) {
+    setState(() {
+      _speechText = val.recognizedWords;
+      String command = val.recognizedWords.toLowerCase();
+      
+      // Expanded Voice Command Processing Engine
+      if (command.contains('open') || command.contains('up') || command.contains('forward')) {
+        _sendMotorCommand('FORWARD');
+      } else if (command.contains('close') || command.contains('down') || command.contains('reverse') || command.contains('back')) {
+        _sendMotorCommand('REVERSE');
+      } else if (command.contains('left')) {
+        _sendMotorCommand('LEFT');     // 👈 Added Left Support!
+      } else if (command.contains('right')) {
+        _sendMotorCommand('RIGHT');   // 👈 Added Right Support!
+      } else if (command.contains('stop') || command.contains('halt')) {
+        _sendMotorCommand('STOP');
+      }
+    });
+  },
+);
+          });
+        },
+      );
+    }
+  } else {
+    setState(() => _isListening = false);
+    _speech.stop();
+  }
+}
 
   @override
   void initState() {
@@ -304,6 +364,52 @@ void _activateFirebaseStream() {
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 children: [
+       // 👇 NEW SIDE-BY-SIDE BRANDING ROW 👇
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 4.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.start, // Pulls everything to the far left
+                      crossAxisAlignment: CrossAxisAlignment.center, // Centers them vertically with each other
+                      children: [
+                        // 1. App Logo on the left
+                        Image.asset(
+                          'assets/logo.png',
+                          width: 205,   // Slightly smaller so it blends cleanly next to text
+                          height: 205,
+                          fit: BoxFit.contain,
+                        ),
+                        
+                        const SizedBox(width: 16), // Clear gap between the logo and text
+                        
+                        // 2. High-Visibility App Name on the right
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'SmartSort',
+                              style: TextStyle(
+                                fontSize: 38,                 // Extra large and visible
+                                fontWeight: FontWeight.w900, // Extra thick font weight
+                                letterSpacing: 0.5,           // Tight, clean modern professional spacing
+                                color: Colors.white,          // Crisp white color pops cleanly off a dark theme
+                              ),
+                            ),
+                            Text(
+                              'Ecosystem Workspace',          // Subheading to ground the branding layout
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.tealAccent,      // Neon accent color for premium contrast
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16), // Space before your live bin status card starts
+                  // 👆 END OF BRANDING ROW 👆
                   // Public Telemetry: Bin Capacity & Operational Status (Tints red if in Maintenance)
                   Card(
                     color: isMaintenanceMode ? const Color(0xFF2D191E) : const Color(0xFF1C1E24),
@@ -437,6 +543,93 @@ void _activateFirebaseStream() {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                   // 👇 NEW MOTOR CONTROLS & VOICE RECOGNITION PANEL 👇
+                  Card(
+                    color: const Color(0xFF1C1E24),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Hardware Actuator & Motor Overrides', style: TextStyle(color: Colors.tealAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 16),
+                          
+                          // PART A: Manual D-Pad Steering Buttons
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Column(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.arrow_upward, color: Colors.white, size: 32),
+                                    onPressed: () => _sendMotorCommand('FORWARD'),
+                                  ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.arrow_back, color: Colors.white, size: 32),
+                                        onPressed: () => _sendMotorCommand('LEFT'),
+                                      ),
+                                      const SizedBox(width: 24),
+                                      IconButton(
+                                        icon: const Icon(Icons.stop_circle, color: Colors.redAccent, size: 36),
+                                        onPressed: () => _sendMotorCommand('STOP'),
+                                      ),
+                                      const SizedBox(width: 24),
+                                      IconButton(
+                                        icon: const Icon(Icons.arrow_forward, color: Colors.white, size: 32),
+                                        onPressed: () => _sendMotorCommand('RIGHT'),
+                                      ),
+                                    ],
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.arrow_downward, color: Colors.white, size: 32),
+                                    onPressed: () => _sendMotorCommand('REVERSE'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const Divider(color: Colors.white10, height: 24),
+                          
+                          // PART B: Voice Recognition Control Unit
+                          const Text('Voice Command Interface', style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              FloatingActionButton.small(
+                                backgroundColor: _isListening ? Colors.redAccent : Colors.tealAccent,
+                                child: Icon(_isListening ? Icons.mic : Icons.mic_none, color: Colors.black),
+                                onPressed: _listenToVoice,
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF13151A),
+                                    borderRadius: BorderRadius.circular(8)
+                                  ),
+                                  child: Text(
+                                    _speechText,
+                                    style: TextStyle(
+                                      color: _isListening ? Colors.tealAccent : Colors.white70,
+                                      fontSize: 12,
+                                      fontFamily: 'monospace'
+                                    ),
+                                  ),
+                                ),
+                              )
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // 👆 END OF MOTOR & VOICE CONTROLS 👆
                   const SizedBox(height: 12),
 
                   // Waste Disposal Cycle Tracker
@@ -578,6 +771,7 @@ void _activateFirebaseStream() {
                     ),
                   ),
                   const SizedBox(height: 12),
+                 
 
                   // MASTER ADMIN LOG STREAM: Raw logs containing Alerta ticket notifications and full transaction hashes
                   Card(
