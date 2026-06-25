@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Handles the system clipboard action strings
+import 'package:flutter/services.dart'; 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:solana/solana.dart';
 import 'package:solana/dto.dart';
-import 'package:http/http.dart' ;
-import 'package:http/http.dart' as http;
+import 'package:http/http.dart' as http; // 👈 Kept this one, removed the duplicate above it
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +33,7 @@ void main() async {
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+  
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -59,10 +60,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool isMaintenanceMode = false;
   bool _wasPreviouslyFull = false;
   // Add these variables at the top of your state class
-final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
+final DatabaseReference _dbRef = FirebaseDatabase.instance.ref("completed_cycles");
 bool _isListening = false;
 String _speechText = "Press the mic and say a command...";
 final SpeechToText _speech = SpeechToText();
+bool _isWalletSaved = false;
+
 
 // This function sends manual motor command strings straight to Firebase
 void _sendMotorCommand(String direction) {
@@ -130,7 +133,65 @@ void _listenToVoice() async {
     _userWalletController.dispose();
     super.dispose();
   }
+  // Load wallet from storage on app startup
+void _loadSavedWallet() async {
+  final SharedPreferences prefs = await SharedPreferences.getInstance();
+  final String savedAddress = prefs.getString('saved_wallet_address') ?? "";
+  if (savedAddress.isNotEmpty) {
+    setState(() {
+      _walletAddress = savedAddress;
+      _userWalletController.text = savedAddress;
+      _isWalletSaved = true;
+    });
+  }
+}
 
+// Save wallet to storage when they click save
+void _saveWalletToDevice() async {
+  if (_userWalletController.text.trim().isEmpty) return;
+  
+  final SharedPreferences prefs = await SharedPreferences.getInstance();
+  await prefs.setString('saved_wallet_address', _userWalletController.text.trim());
+  
+  setState(() {
+    _walletAddress = _userWalletController.text.trim();
+    _isWalletSaved = true;
+  });
+  void initiateWasteDisposal() async {
+  if (isMaintenanceMode) return;
+  if (!_isWalletSaved || _walletAddress.isEmpty) return;
+
+  // 1. Firebase tracking execution logic
+  DatabaseReference newCycleRef = _dbRef.push();
+  await newCycleRef.set({
+    "recipientWallet": _walletAddress,
+    "status": "pending_reward",
+    "timestamp": ServerValue.timestamp,
+  });
+  // 2. Wait 5.5 seconds for the Solana network to process the gas deduction
+  setState(() {
+    wasteLogs.insert(0, "⏳ Waiting for chain finalization...");
+  });
+  await Future.delayed(const Duration(milliseconds: 5500));
+
+  // 3. Live balance background refresh block
+  try {
+    // Re-fetch the live balance from your existing rpcClient
+    final dynamic balanceData = await _solanaClient.rpcClient.getBalance(_walletAddress);
+    
+    setState(() {
+      // Updates your existing wallet state variable without crashing
+      _walletAddress = (balanceData / 1000000000).toString(); 
+    });
+  } catch (e) {
+    print("Gas deduction fetch delayed: $e");
+  }
+
+  setState(() { 
+    wasteLogs.insert(0, "♻️ Disposal logged. Live balance updated!");
+  });
+}
+}
   // --- SOLANA CORE INITIALIZATION LAYER ---
   Future<void> _initializeSolana() async {
     _solanaClient = SolanaClient(
@@ -357,6 +418,7 @@ void _activateFirebaseStream() {
         body: TabBarView(
           children: [
             
+            
             // =================================================================
             // VIEW 1: THE PUBLIC USER INTERFACE
             // =================================================================
@@ -482,41 +544,46 @@ void _activateFirebaseStream() {
                     const SizedBox(height: 12),
                   ],
 
-                  // USER RECIPIENT WALLET INPUT
-                  Card(
-                    color: const Color(0xFF1C1E24),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Recipient Reward Destination Wallet', 
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.tealAccent)
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            enabled: !isMaintenanceMode, // Lock field input if system enters Maintenance mode
-                            controller: _userWalletController,
-                            style: TextStyle(color: isMaintenanceMode ? Colors.grey : Colors.white, fontSize: 12, fontFamily: 'monospace'),
-                            decoration: InputDecoration(
-                              hintText: isMaintenanceMode ? 'System locked down' : 'Paste your Solana wallet address (e.g. 7xM... )',
-                              hintStyle: const TextStyle(color: Colors.grey, fontSize: 12),
-                              filled: true,
-                              fillColor: const Color(0xFF13151A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8), 
-                                borderSide: BorderSide.none
-                              ),
-                              prefixIcon: const Icon(Icons.account_balance_wallet, color: Colors.grey, size: 18),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+          if (_isWalletSaved) ...[
+  // Displays the saved address cleanly with an Edit button next to it
+  Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    children: [
+      Expanded(
+        child: Text(
+          "Linked Wallet: $_walletAddress", 
+          style: const TextStyle(color: Colors.tealAccent),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      IconButton(
+        icon: const Icon(Icons.edit, color: Colors.grey),
+        onPressed: () {
+          setState(() {
+            _isWalletSaved = false; // Opens up the input field again
+          });
+        },
+        tooltip: "Change wallet address",
+      ),
+    ],
+  ),
+] else ...[
+  // Shows the input field if no wallet is saved or if "Edit" was clicked
+  Row(
+    children: [
+      Expanded(
+        child: TextField(
+          controller: _userWalletController,
+          decoration: const InputDecoration(labelText: "Enter Solana Wallet Address"),
+        ),
+      ),
+      ElevatedButton(
+        onPressed: _saveWalletToDevice,
+        child: const Text("Save"),
+      ),
+    ],
+  ),
+],
 
                   // User Rewards Information Panel
                   Card(
