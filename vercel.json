@@ -1,8 +1,1 @@
-{
-  "version": 2,
-  "public": true,
-  "cleanUrls": true,
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/build/web/$1" }
-  ]
-}
+{ "version": 2, "cleanUrls": true, "rewrites": [ { "source": "/(.*)", "destination": "/build/web/$1" } ] }
