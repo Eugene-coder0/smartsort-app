@@ -1,9 +1,6 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "pubspec.yaml",
-      "use": "@vercel/flutter"
-    }
-  ]
+  "cleanUrls": true,
+  "framework": null,
+  "outputDirectory": "build/web"
 }
