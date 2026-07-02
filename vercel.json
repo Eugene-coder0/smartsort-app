@@ -1,1 +1,8 @@
-{ "version": 2, "cleanUrls": true, "rewrites": [ { "source": "/(.*)", "destination": "/build/web/$1" } ] }
+{
+  "version": 2,
+  "cleanUrls": true,
+  "outputDirectory": "build/web",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
