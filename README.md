@@ -60,6 +60,23 @@ Check the project for analyzer issues:
 flutter analyze
 ```
 
+## Deploying to Vercel
+
+The repository includes `vercel.json`, which installs the Flutter stable SDK in the Vercel build environment, builds the web release, and serves the generated `build/web` directory.
+
+To deploy from the Vercel dashboard:
+
+1. Import the repository into Vercel.
+2. Leave the framework preset as **Other**.
+3. Keep the project root at the repository root.
+4. Deploy. The build command is provided by `vercel.json`.
+
+For CLI deployments, run:
+
+```bash
+vercel
+```
+
 ## Firebase Setup
 
 1. Create or select a Firebase project.
